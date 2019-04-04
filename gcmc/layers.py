@@ -378,9 +378,10 @@ class BilinearMixture(Layer):
     To use in combination with bipartite layers.
     """
 
-    def __init__(self, num_classes, u_indices, v_indices, input_dim, num_users, num_items, user_item_bias=False,
+    def __init__(self, num_classes, u_indices, v_indices, v_neg_indices, input_dim, num_users, num_items, user_item_bias=False,
                  dropout=0., act=tf.nn.softmax, num_weights=3,
                  diagonal=True, **kwargs):
+        assert num_classes == 1
         super(BilinearMixture, self).__init__(**kwargs)
         with tf.variable_scope(self.name + '_vars'):
 
@@ -410,6 +411,7 @@ class BilinearMixture(Layer):
         self.num_weights = num_weights
         self.u_indices = u_indices
         self.v_indices = v_indices
+        self.v_neg_indices = v_neg_indices
 
         self.dropout = dropout
         self.act = act
@@ -422,35 +424,46 @@ class BilinearMixture(Layer):
         v_inputs = tf.nn.dropout(inputs[1], 1 - self.dropout)
 
         u_inputs = tf.gather(u_inputs, self.u_indices)
+        v_neg_inputs = tf.gather(v_inputs, self.v_neg_indices)
         v_inputs = tf.gather(v_inputs, self.v_indices)
 
         if self.user_item_bias:
             u_bias = tf.gather(self.vars['user_bias'], self.u_indices)
             v_bias = tf.gather(self.vars['item_bias'], self.v_indices)
+            v_neg_bias = tf.gather(self.vars['item_bias'], self.v_neg_indices)
         else:
             u_bias = None
             v_bias = None
+            v_neg_bias = None
 
         basis_outputs = []
+        basis_outputs_neg = []
         for i in range(self.num_weights):
 
             u_w = self._multiply_inputs_weights(u_inputs, self.vars['weights_%d' % i])
             x = tf.reduce_sum(tf.multiply(u_w, v_inputs), axis=1)
+            x_neg = tf.reduce_sum(tf.multiply(u_w, v_neg_inputs), axis=1)
 
             basis_outputs.append(x)
+            basis_outputs_neg.append(x_neg)
 
         # Store outputs in (Nu x Nv) x num_classes tensor and apply activation function
         basis_outputs = tf.stack(basis_outputs, axis=1)
+        basis_outputs_neg = tf.stack(basis_outputs_neg, axis=1)
 
         outputs = tf.matmul(basis_outputs,  self.vars['weights_scalars'], transpose_b=False)
+        outputs_neg = tf.matmul(basis_outputs_neg,  self.vars['weights_scalars'], transpose_b=False)
 
         if self.user_item_bias:
             outputs += u_bias
             outputs += v_bias
+            outputs_neg += u_bias
+            outputs_neg += v_bias
 
         outputs = self.act(outputs)
+        outputs_neg = self.act(outputs_neg)
 
-        return outputs
+        return outputs, outputs_neg
 
     def __call__(self, inputs):
         with tf.name_scope(self.name):

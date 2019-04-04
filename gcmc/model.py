@@ -101,9 +101,10 @@ class RecommenderGAE(Model):
         self.support = placeholders['support']
         self.support_t = placeholders['support_t']
         self.dropout = placeholders['dropout']
-        self.labels = placeholders['labels']
+        #self.labels = placeholders['labels']
         self.u_indices = placeholders['user_indices']
         self.v_indices = placeholders['item_indices']
+        self.v_neg_indices = placeholders['item_neg_indices']
         self.class_values = placeholders['class_values']
 
         self.hidden = hidden
@@ -134,12 +135,14 @@ class RecommenderGAE(Model):
         self._rmse()
 
     def _loss(self):
-        self.loss += softmax_cross_entropy(self.outputs, self.labels)
+        #self.loss += softmax_cross_entropy(self.outputs, self.labels)
+        outputs, outputs_neg = self.outputs
+        self.loss += tf.reduce_mean(tf.maximum(0, 1 + outputs_neg - outputs))
 
         tf.summary.scalar('loss', self.loss)
 
     def _accuracy(self):
-        self.accuracy = softmax_accuracy(self.outputs, self.labels)
+        #self.accuracy = softmax_accuracy(self.outputs, self.labels)
 
     def _rmse(self):
         self.rmse = expected_rmse(self.outputs, self.labels, self.class_values)
@@ -189,6 +192,7 @@ class RecommenderGAE(Model):
         self.layers.append(BilinearMixture(num_classes=self.num_classes,
                                            u_indices=self.u_indices,
                                            v_indices=self.v_indices,
+                                           v_neg_indices=self.v_neg_indices,
                                            input_dim=self.hidden[1],
                                            num_users=self.num_users,
                                            num_items=self.num_items,
@@ -215,9 +219,10 @@ class RecommenderSideInfoGAE(Model):
         self.support = placeholders['support']
         self.support_t = placeholders['support_t']
         self.dropout = placeholders['dropout']
-        self.labels = placeholders['labels']
+        #self.labels = placeholders['labels']
         self.u_indices = placeholders['user_indices']
         self.v_indices = placeholders['item_indices']
+        self.v_neg_indices = placeholders['item_neg_indices']
         self.class_values = placeholders['class_values']
 
         self.num_side_features = num_side_features
@@ -258,7 +263,9 @@ class RecommenderSideInfoGAE(Model):
         self._rmse()
 
     def _loss(self):
-        self.loss += softmax_cross_entropy(self.outputs, self.labels)
+        #self.loss += softmax_cross_entropy(self.outputs, self.labels)
+        outputs, outputs_neg = self.outputs
+        self.loss += tf.reduce_mean(tf.maximum(0, 1 + outputs_neg - outputs))
 
         tf.summary.scalar('loss', self.loss)
 
@@ -322,6 +329,7 @@ class RecommenderSideInfoGAE(Model):
         self.layers.append(BilinearMixture(num_classes=self.num_classes,
                                            u_indices=self.u_indices,
                                            v_indices=self.v_indices,
+                                           v_neg_indices=self.v_neg_indices,
                                            input_dim=self.hidden[1],
                                            num_users=self.num_users,
                                            num_items=self.num_items,
