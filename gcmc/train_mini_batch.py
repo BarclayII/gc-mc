@@ -10,6 +10,8 @@ import time
 import tensorflow as tf
 import numpy as np
 import scipy.sparse as sp
+import pandas as pd
+import tqdm
 
 import json
 
@@ -192,6 +194,9 @@ test_support = support[np.array(test_u)]
 test_support_t = support_t[np.array(test_v)]
 
 # Collect all user and item nodes for validation set
+val_u_indices_gt = val_u_indices
+val_v_indices_gt = val_v_indices
+
 val_u = list(set(val_u_indices))
 val_v = list(set(val_v_indices) | set(val_v_neg_indices))
 val_u_dict = {n: i for i, n in enumerate(val_u)}
@@ -289,6 +294,45 @@ wait = 0
 
 print('Training...')
 
+def compute_val_mrr():
+    rr = []
+    for u_index in tqdm.trange(num_users):
+        v_indices_gt = val_v_indices_gt[val_u_indices_gt == u_index]
+        
+        val_u_indices = np.zeros(num_product, dtype='int32') + u_index
+        val_v_indices = np.arange(num_product)
+        val_v_neg_indices = np.arange(num_product)
+
+        val_u = list(set(val_u_indices))
+        val_v = list(set(val_v_indices) | set(val_v_neg_indices))
+
+        val_u_dict = {n: i for i, n in enumerate(val_u)}
+        val_v_dict = {n: i for i, n in enumerate(val_v)}
+
+        val_u_indices = np.array([val_u_dict[o] for o in val_u_indices])
+        val_v_indices = np.array([val_v_dict[o] for o in val_v_indices])
+        val_v_neg_indices = np.array([val_v_dict[o] for o in val_v_neg_indices])
+
+        val_support = support[np.array(val_u)]
+        val_support_t = support_t[np.array(val_v)]
+
+        val_support = sparse_to_tuple(val_support)
+        val_support_t = sparse_to_tuple(val_support_t)
+
+        val_feed_dict = construct_feed_dict(placeholders, u_features, v_features, u_features_nonzero,
+                                            v_features_nonzero, val_support, val_support_t,
+                                            val_labels, val_u_indices, val_v_indices, class_values, 0.)
+        val_feed_dict.update({placeholders['item_neg_indices']: val_v_neg_indices})
+
+        val_scores = sess.run([model.outputs[0]], feed_dict=val_feed_dict)
+        val_scores_sort_idx = np.argsort(val_scores)[::-1]
+        rank_map = {v: i for i, v in enumerate(score_sort_idx)}
+        rank_candidates = np.array([rank_map[v] for v in v_indices_gt])
+        rank = 1 / (rank_candidates + 1)
+        rr.append(rank.mean())
+
+    return np.array(rr)
+
 for epoch in range(NB_EPOCH):
 
     batch_iter = 0
@@ -378,6 +422,9 @@ for epoch in range(NB_EPOCH):
 
     except StopIteration:
         pass
+
+    rr = compute_mrr()
+    print(pd.Series(rr).describe())
     #if (epoch+1) % 10 == 0:
     #    LR = max(LR * 0.8, 1e-4)
 
