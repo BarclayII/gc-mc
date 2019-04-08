@@ -3,7 +3,7 @@ from __future__ import print_function
 
 
 def construct_feed_dict(placeholders, u_features, v_features, u_features_nonzero, v_features_nonzero,
-                        support, support_t, labels, u_indices, v_indices, v_neg_indices, class_values,
+                        support, support_t, labels, u_indices, v_indices, class_values,
                         dropout, u_features_side=None, v_features_side=None):
     """
     Function that creates feed dictionary when running tensorflow sessions.
@@ -20,7 +20,6 @@ def construct_feed_dict(placeholders, u_features, v_features, u_features_nonzero
     feed_dict.update({placeholders['labels']: labels})
     feed_dict.update({placeholders['user_indices']: u_indices})
     feed_dict.update({placeholders['item_indices']: v_indices})
-    feed_dict.update({placeholders['item_neg_indices']: v_neg_indices})
 
     feed_dict.update({placeholders['dropout']: dropout})
     feed_dict.update({placeholders['class_values']: class_values})

@@ -178,6 +178,7 @@ test_v_dict = {n: i for i, n in enumerate(test_v)}
 
 test_u_indices = np.array([test_u_dict[o] for o in test_u_indices])
 test_v_indices = np.array([test_v_dict[o] for o in test_v_indices])
+test_v_neg_indices = np.random.randint(0, num_items, len(test_v_indices))
 
 test_support = support[np.array(test_u)]
 test_support_t = support_t[np.array(test_v)]
@@ -251,6 +252,7 @@ val_feed_dict = construct_feed_dict(placeholders, u_features, v_features, u_feat
 test_feed_dict = construct_feed_dict(placeholders, u_features, v_features, u_features_nonzero,
                                      v_features_nonzero, test_support, test_support_t,
                                      test_labels, test_u_indices, test_v_indices, class_values, 0.)
+test_feed_dict.update({'item_neg_indices': test_v_neg_indices})
 
 # Collect all variables to be logged into summary
 merged_summary = tf.summary.merge_all()
@@ -291,6 +293,7 @@ for epoch in range(NB_EPOCH):
 
             train_u_indices_batch = np.array([train_u_dict[o] for o in train_u_indices_batch])
             train_v_indices_batch = np.array([train_v_dict[o] for o in train_v_indices_batch])
+            train_v_neg_indices_batch = np.random.randint(0, num_items, len(train_v_indices_batch))
 
             train_support_batch = sparse_to_tuple(support[np.array(train_u)])
             train_support_t_batch = sparse_to_tuple(support_t[np.array(train_v)])
@@ -301,12 +304,15 @@ for epoch in range(NB_EPOCH):
                                                         train_support_t_batch,
                                                         train_labels_batch, train_u_indices_batch,
                                                         train_v_indices_batch, class_values, DO)
+            train_feed_dict_batch.update({placeholders['item_neg_indices']: train_v_neg_indices_batch})
 
             # with exponential moving averages
             outs = sess.run([model.training_op, model.loss, model.rmse], feed_dict=train_feed_dict_batch)
 
             train_avg_loss = outs[1]
             train_rmse = outs[2]
+
+            val_feed_dict.update({placeholders['item_neg_indices']: np.random.randint(0, num_items, len(val_v_indices))})
 
             val_avg_loss, val_rmse = sess.run([model.loss, model.rmse], feed_dict=val_feed_dict)
 
