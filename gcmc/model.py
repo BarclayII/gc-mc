@@ -120,6 +120,7 @@ class RecommenderGAE(Model):
 
         # standard settings: beta1=0.9, beta2=0.999, epsilon=1.e-8
         self.optimizer = tf.train.AdamOptimizer(learning_rate=self.learning_rate, beta1=0.9, beta2=0.999, epsilon=1.e-8)
+        #self.optimizer = tf.train.GradientDescentOptimizer(self.learning_rate)
 
         self.build()
 
@@ -127,8 +128,9 @@ class RecommenderGAE(Model):
         self.variable_averages = tf.train.ExponentialMovingAverage(moving_average_decay, self.global_step)
         self.variables_averages_op = self.variable_averages.apply(tf.trainable_variables())
 
-        with tf.control_dependencies([self.opt_op]):
-            self.training_op = tf.group(self.variables_averages_op)
+        #with tf.control_dependencies([self.opt_op]):
+        #    self.training_op = tf.group(self.variables_averages_op)
+        self.training_op = self.opt_op
 
         self.embeddings = self.activations[2]
 
@@ -137,15 +139,18 @@ class RecommenderGAE(Model):
     def _loss(self):
         #self.loss += softmax_cross_entropy(self.outputs, self.labels)
         outputs, outputs_neg = self.outputs
-        self.loss += tf.reduce_mean(tf.maximum(0, 1 + outputs_neg - outputs))
+        self.loss += tf.reduce_mean(tf.maximum(0., 1 + outputs_neg - outputs))
 
         tf.summary.scalar('loss', self.loss)
 
     def _accuracy(self):
         #self.accuracy = softmax_accuracy(self.outputs, self.labels)
+        outputs, outputs_neg = self.outputs
+        self.accuracy = tf.reduce_mean(tf.cast(outputs > outputs_neg, tf.float32))
 
     def _rmse(self):
-        self.rmse = expected_rmse(self.outputs, self.labels, self.class_values)
+        #self.rmse = expected_rmse(self.outputs, self.labels, self.class_values)
+        self.rmse = self.accuracy
 
         tf.summary.scalar('rmse_score', self.rmse)
 
@@ -159,7 +164,7 @@ class RecommenderGAE(Model):
                                                  u_features_nonzero=self.u_features_nonzero,
                                                  v_features_nonzero=self.v_features_nonzero,
                                                  sparse_inputs=True,
-                                                 act=tf.nn.relu,
+                                                 act=tf.nn.leaky_relu,
                                                  bias=False,
                                                  dropout=self.dropout,
                                                  logging=self.logging,
@@ -175,7 +180,7 @@ class RecommenderGAE(Model):
                                         u_features_nonzero=self.u_features_nonzero,
                                         v_features_nonzero=self.v_features_nonzero,
                                         sparse_inputs=True,
-                                        act=tf.nn.relu,
+                                        act=tf.nn.leaky_relu,
                                         dropout=self.dropout,
                                         logging=self.logging,
                                         share_user_item_weights=True))
@@ -248,6 +253,7 @@ class RecommenderSideInfoGAE(Model):
 
         # standard settings: beta1=0.9, beta2=0.999, epsilon=1.e-8
         self.optimizer = tf.train.AdamOptimizer(learning_rate=self.learning_rate, beta1=0.9, beta2=0.999, epsilon=1.e-8)
+        #self.optimizer = tf.train.GradientDescentOptimizer(self.learning_rate)
 
         self.build()
 
@@ -255,8 +261,9 @@ class RecommenderSideInfoGAE(Model):
         self.variable_averages = tf.train.ExponentialMovingAverage(moving_average_decay, self.global_step)
         self.variables_averages_op = self.variable_averages.apply(tf.trainable_variables())
 
-        with tf.control_dependencies([self.opt_op]):
-            self.training_op = tf.group(self.variables_averages_op)
+        #with tf.control_dependencies([self.opt_op]):
+        #    self.training_op = tf.group(self.variables_averages_op)
+        self.training_op = self.opt_op
 
         self.embeddings = self.activations[0]
 
@@ -265,17 +272,21 @@ class RecommenderSideInfoGAE(Model):
     def _loss(self):
         #self.loss += softmax_cross_entropy(self.outputs, self.labels)
         outputs, outputs_neg = self.outputs
-        self.loss += tf.reduce_mean(tf.maximum(0, 1 + outputs_neg - outputs))
+        self.loss += tf.reduce_mean(tf.maximum(0., 1 + outputs_neg - outputs))
 
         tf.summary.scalar('loss', self.loss)
 
     def _accuracy(self):
-        self.accuracy = softmax_accuracy(self.outputs, self.labels)
+        #self.accuracy = softmax_accuracy(self.outputs, self.labels)
+        outputs, outputs_neg = self.outputs
+        self.accuracy = tf.reduce_mean(tf.cast(outputs > outputs_neg, tf.float32))
 
     def _rmse(self):
-        self.rmse = expected_rmse(self.outputs, self.labels, self.class_values)
+        #self.rmse = expected_rmse(self.outputs, self.labels, self.class_values)
+        self.rmse = self.accuracy
 
         tf.summary.scalar('rmse_score', self.rmse)
+
 
     def _build(self):
         if self.accum == 'sum':
@@ -287,7 +298,7 @@ class RecommenderSideInfoGAE(Model):
                                                  u_features_nonzero=self.u_features_nonzero,
                                                  v_features_nonzero=self.v_features_nonzero,
                                                  sparse_inputs=True,
-                                                 act=tf.nn.relu,
+                                                 act=tf.nn.leaky_relu,
                                                  bias=False,
                                                  dropout=self.dropout,
                                                  logging=self.logging,
@@ -303,7 +314,7 @@ class RecommenderSideInfoGAE(Model):
                                         u_features_nonzero=self.u_features_nonzero,
                                         v_features_nonzero=self.v_features_nonzero,
                                         sparse_inputs=True,
-                                        act=tf.nn.relu,
+                                        act=tf.nn.leaky_relu,
                                         dropout=self.dropout,
                                         logging=self.logging,
                                         share_user_item_weights=True))
@@ -313,7 +324,7 @@ class RecommenderSideInfoGAE(Model):
 
         self.layers.append(Dense(input_dim=self.num_side_features,
                                  output_dim=self.feat_hidden_dim,
-                                 act=tf.nn.relu,
+                                 act=tf.nn.leaky_relu,
                                  dropout=0.,
                                  logging=self.logging,
                                  bias=True,

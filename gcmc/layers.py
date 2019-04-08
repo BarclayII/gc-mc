@@ -87,7 +87,7 @@ class Layer(object):
 class Dense(Layer):
     """Dense layer for two types of nodes in a bipartite graph. """
 
-    def __init__(self, input_dim, output_dim, dropout=0., act=tf.nn.relu, share_user_item_weights=False,
+    def __init__(self, input_dim, output_dim, dropout=0., act=tf.nn.leaky_relu, share_user_item_weights=False,
                  bias=False, **kwargs):
         super(Dense, self).__init__(**kwargs)
 
@@ -152,7 +152,7 @@ class StackGCN(Layer):
 
     def __init__(self, input_dim, output_dim, support, support_t, num_support, u_features_nonzero=None,
                  v_features_nonzero=None, sparse_inputs=False, dropout=0.,
-                 act=tf.nn.relu, share_user_item_weights=True, **kwargs):
+                 act=tf.nn.leaky_relu, share_user_item_weights=True, **kwargs):
         super(StackGCN, self).__init__(**kwargs)
 
         assert output_dim % num_support == 0, 'output_dim must be multiple of num_support for stackGC layer'
@@ -236,7 +236,7 @@ class OrdinalMixtureGCN(Layer):
 
     def __init__(self, input_dim, output_dim, support, support_t, num_support, u_features_nonzero=None,
                  v_features_nonzero=None, sparse_inputs=False, dropout=0.,
-                 act=tf.nn.relu, bias=False, share_user_item_weights=False, self_connections=False, **kwargs):
+                 act=tf.nn.leaky_relu, bias=False, share_user_item_weights=False, self_connections=False, **kwargs):
         super(OrdinalMixtureGCN, self).__init__(**kwargs)
 
         with tf.variable_scope(self.name + '_vars'):

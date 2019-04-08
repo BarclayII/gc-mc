@@ -118,6 +118,7 @@ elif DATASET == 'ml_10m':
     NUMCLASSES = 10
 else:
     raise ValueError('Invalid choice of dataset: %s' % DATASET)
+NUMCLASSES = 1
 
 # Splitting dataset in training, validation and test set
 
@@ -138,6 +139,9 @@ print ('num mini batch = ', num_mini_batch)
 
 num_users, num_items = adj_train.shape
 
+test_v_neg_indices = np.random.randint(0, num_items, len(test_v_indices))
+val_v_neg_indices = np.random.randint(0, num_items, len(val_v_indices))
+
 # feature loading
 if not FEATURES:
     u_features = sp.identity(num_users, format='csr')
@@ -152,12 +156,16 @@ else:
 support = []
 support_t = []
 adj_train_int = sp.csr_matrix(adj_train, dtype=np.int32)
-for i in range(NUMCLASSES):
-    # build individual binary rating matrices (supports) for each rating
-    support_unnormalized = sp.csr_matrix(adj_train_int == i + 1, dtype=np.float32)
-    support_unnormalized_transpose = support_unnormalized.T
-    support.append(support_unnormalized)
-    support_t.append(support_unnormalized_transpose)
+#for i in range(NUMCLASSES):
+#    # build individual binary rating matrices (supports) for each rating
+#    support_unnormalized = sp.csr_matrix(adj_train_int == i + 1, dtype=np.float32)
+#    support_unnormalized_transpose = support_unnormalized.T
+#    support.append(support_unnormalized)
+#    support_t.append(support_unnormalized_transpose)
+support_unnormalized = sp.csr_matrix(adj_train_int != 0, dtype=np.float32)
+support_unnormalized_transpose = support_unnormalized.T
+support.append(support_unnormalized)
+support_t.append(support_unnormalized_transpose)
 
 support = globally_normalize_bipartite_adjacency(support, symmetric=SYM)
 support_t = globally_normalize_bipartite_adjacency(support_t, symmetric=SYM)
@@ -172,45 +180,48 @@ support_t = sp.hstack(support_t, format='csr')
 
 # Collect all user and item nodes for test set
 test_u = list(set(test_u_indices))
-test_v = list(set(test_v_indices))
+test_v = list(set(test_v_indices) | set(test_v_neg_indices))
 test_u_dict = {n: i for i, n in enumerate(test_u)}
 test_v_dict = {n: i for i, n in enumerate(test_v)}
 
 test_u_indices = np.array([test_u_dict[o] for o in test_u_indices])
 test_v_indices = np.array([test_v_dict[o] for o in test_v_indices])
-test_v_neg_indices = np.random.randint(0, num_items, len(test_v_indices))
+test_v_neg_indices = np.array([test_v_dict[o] for o in test_v_neg_indices])
 
 test_support = support[np.array(test_u)]
 test_support_t = support_t[np.array(test_v)]
 
 # Collect all user and item nodes for validation set
 val_u = list(set(val_u_indices))
-val_v = list(set(val_v_indices))
+val_v = list(set(val_v_indices) | set(val_v_neg_indices))
 val_u_dict = {n: i for i, n in enumerate(val_u)}
 val_v_dict = {n: i for i, n in enumerate(val_v)}
 
 val_u_indices = np.array([val_u_dict[o] for o in val_u_indices])
 val_v_indices = np.array([val_v_dict[o] for o in val_v_indices])
+val_v_neg_indices = np.array([val_v_dict[o] for o in val_v_neg_indices])
 
 val_support = support[np.array(val_u)]
 val_support_t = support_t[np.array(val_v)]
 
 placeholders = {
-    'u_features': tf.sparse_placeholder(tf.float32, shape=np.array(u_features.shape, dtype=np.int64)),
-    'v_features': tf.sparse_placeholder(tf.float32, shape=np.array(v_features.shape, dtype=np.int64)),
-    'u_features_nonzero': tf.placeholder(tf.int32, shape=()),
-    'v_features_nonzero': tf.placeholder(tf.int32, shape=()),
-    'labels': tf.placeholder(tf.int32, shape=(None,)),
+    'u_features': tf.sparse_placeholder(tf.float32, shape=np.array(u_features.shape, dtype=np.int64), name='u_features'),
+    'v_features': tf.sparse_placeholder(tf.float32, shape=np.array(v_features.shape, dtype=np.int64), name='v_features'),
+    'u_features_nonzero': tf.placeholder(tf.int32, shape=(), name='u_features_nonzero'),
+    'v_features_nonzero': tf.placeholder(tf.int32, shape=(), name='v_features_nonzero'),
+    'labels': tf.placeholder(tf.int32, shape=(None,), name='labels'),
 
-    'user_indices': tf.placeholder(tf.int32, shape=(None,)),
-    'item_indices': tf.placeholder(tf.int32, shape=(None,)),
+    'user_indices': tf.placeholder(tf.int32, shape=(None,), name='user_indices'),
+    'item_indices': tf.placeholder(tf.int32, shape=(None,), name='item_indices'),
+    'item_neg_indices': tf.placeholder(tf.int32, shape=(None,), name='item_neg_indices'),
 
-    'dropout': tf.placeholder_with_default(0., shape=()),
+    'dropout': tf.placeholder_with_default(0., shape=(), name='dropout'),
 
-    'class_values': tf.placeholder(tf.float32, shape=class_values.shape),
+    'class_values': tf.placeholder(tf.float32, shape=class_values.shape, name='class_values'),
 
-    'support': tf.sparse_placeholder(tf.float32, shape=(None, None)),
-    'support_t': tf.sparse_placeholder(tf.float32, shape=(None, None)),
+    'support': tf.sparse_placeholder(tf.float32, shape=(None, None), name='support'),
+    'support_t': tf.sparse_placeholder(tf.float32, shape=(None, None), name='support_t'),
+    'lr': tf.placeholder(tf.float32, shape=(), name='lr'),
 }
 
 # create model
@@ -224,7 +235,7 @@ model = RecommenderGAE(placeholders,
                        num_users=num_users,
                        num_items=num_items,
                        accum=ACCUM,
-                       learning_rate=LR,
+                       learning_rate=placeholders['lr'],
                        logging=True)
 
 # Convert sparse placeholders to tuples to construct feed_dict
@@ -248,16 +259,20 @@ v_features_nonzero = v_features[1].shape[0]
 val_feed_dict = construct_feed_dict(placeholders, u_features, v_features, u_features_nonzero,
                                     v_features_nonzero, val_support, val_support_t,
                                     val_labels, val_u_indices, val_v_indices, class_values, 0.)
+val_feed_dict.update({placeholders['item_neg_indices']: val_v_neg_indices})
 
 test_feed_dict = construct_feed_dict(placeholders, u_features, v_features, u_features_nonzero,
                                      v_features_nonzero, test_support, test_support_t,
                                      test_labels, test_u_indices, test_v_indices, class_values, 0.)
-test_feed_dict.update({'item_neg_indices': test_v_neg_indices})
+test_feed_dict.update({placeholders['item_neg_indices']: test_v_neg_indices})
 
 # Collect all variables to be logged into summary
 merged_summary = tf.summary.merge_all()
 
-sess = tf.Session()
+from tensorflow.python import debug as tf_debug
+sess = tf_debug.LocalCLIDebugWrapperSession(tf.Session())
+#sess = tf.Session()
+sess.add_tensor_filter('has_inf_or_nan', tf_debug.has_inf_or_nan)
 sess.run(tf.global_variables_initializer())
 
 if WRITESUMMARY:
@@ -284,16 +299,17 @@ for epoch in range(NB_EPOCH):
             t = time.time()
 
             train_u_indices_batch, train_v_indices_batch, train_labels_batch = data_iter.next()
+            train_v_neg_indices_batch = np.random.randint(0, num_items, len(train_v_indices_batch))
 
             # Collect all user and item nodes for train set
             train_u = list(set(train_u_indices_batch))
-            train_v = list(set(train_v_indices_batch))
+            train_v = list(set(train_v_indices_batch) | set(train_v_neg_indices_batch))
             train_u_dict = {n: i for i, n in enumerate(train_u)}
             train_v_dict = {n: i for i, n in enumerate(train_v)}
 
             train_u_indices_batch = np.array([train_u_dict[o] for o in train_u_indices_batch])
             train_v_indices_batch = np.array([train_v_dict[o] for o in train_v_indices_batch])
-            train_v_neg_indices_batch = np.random.randint(0, num_items, len(train_v_indices_batch))
+            train_v_neg_indices_batch = np.array([train_v_dict[o] for o in train_v_neg_indices_batch])
 
             train_support_batch = sparse_to_tuple(support[np.array(train_u)])
             train_support_t_batch = sparse_to_tuple(support_t[np.array(train_v)])
@@ -305,14 +321,13 @@ for epoch in range(NB_EPOCH):
                                                         train_labels_batch, train_u_indices_batch,
                                                         train_v_indices_batch, class_values, DO)
             train_feed_dict_batch.update({placeholders['item_neg_indices']: train_v_neg_indices_batch})
+            train_feed_dict_batch.update({placeholders['lr']: LR})
 
             # with exponential moving averages
             outs = sess.run([model.training_op, model.loss, model.rmse], feed_dict=train_feed_dict_batch)
 
             train_avg_loss = outs[1]
             train_rmse = outs[2]
-
-            val_feed_dict.update({placeholders['item_neg_indices']: np.random.randint(0, num_items, len(val_v_indices))})
 
             val_avg_loss, val_rmse = sess.run([model.loss, model.rmse], feed_dict=val_feed_dict)
 
@@ -323,7 +338,8 @@ for epoch in range(NB_EPOCH):
                       "train_rmse=", "{:.5f}".format(train_rmse),
                       "val_loss=", "{:.5f}".format(val_avg_loss),
                       "val_rmse=", "{:.5f}".format(val_rmse),
-                      "\t\ttime=", "{:.5f}".format(time.time() - t))
+                      "\t\ttime=", "{:.5f}".format(time.time() - t),
+                      "lr=", "{:.5f}".format(LR))
 
             if val_rmse < best_val_score:
                 best_val_score = val_rmse
@@ -362,6 +378,8 @@ for epoch in range(NB_EPOCH):
 
     except StopIteration:
         pass
+    #if (epoch+1) % 10 == 0:
+    #    LR = max(LR * 0.8, 1e-4)
 
 # store model including exponential moving averages
 saver = tf.train.Saver()
